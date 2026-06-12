@@ -323,9 +323,45 @@ def main():
     summary = write_canonical_layout(output_dir, pairs, timestamp_dir, args)
 
     if not args.keep_raw:
-        shutil.rmtree(raw_dir)
+        cleanup_raw(raw_dir, args.docker_image)
 
     print(json.dumps(summary, indent=2), flush=True)
+
+
+def cleanup_raw(raw_dir: Path, docker_image: str) -> None:
+    """Best-effort removal of the raw simulator output.
+
+    The simulator container writes its result tree as the image's own user,
+    so a plain rmtree from the host hits PermissionError. Fall back to
+    deleting through a container with the same user, and never fail the
+    eval over cleanup.
+    """
+    try:
+        shutil.rmtree(raw_dir)
+        return
+    except PermissionError:
+        pass
+    result = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{raw_dir.resolve()}:/cleanup",
+            docker_image,
+            "bash",
+            "-c",
+            "rm -rf /cleanup/* /cleanup/.[!.]*",
+        ],
+        capture_output=True,
+    )
+    try:
+        if result.returncode == 0:
+            shutil.rmtree(raw_dir)
+            return
+    except PermissionError:
+        pass
+    print(f"WARNING: could not remove raw simulator output at {raw_dir}", flush=True)
 
 
 if __name__ == "__main__":
