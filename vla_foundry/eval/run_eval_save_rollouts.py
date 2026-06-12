@@ -92,6 +92,9 @@ def launch_policy_server(args, dump_dir: Path, log_path: Path) -> subprocess.Pop
     env = dict(os.environ)
     if args.gpu is not None:
         env["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+    # Survive co-tenant GPU pressure: a fragmented small alloc OOM kills the
+    # server task and every simulator then hangs on gRPC forever.
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     log_file = open(log_path, "w")  # noqa: SIM115 — must outlive Popen
     return subprocess.Popen(cmd, stdout=log_file, stderr=log_file, env=env, start_new_session=True)
 
@@ -113,7 +116,9 @@ def run_simulator(args, raw_dir: Path, log_path: Path) -> None:
         "vla-foundry-eval",
         "--runtime=nvidia",
         "--gpus",
-        f"device={args.gpu}" if args.gpu is not None else "all",
+        f"device={args.sim_gpu if args.sim_gpu is not None else args.gpu}"
+        if (args.sim_gpu is not None or args.gpu is not None)
+        else "all",
         "--device",
         "/dev/dri",
         *group_add,
@@ -278,7 +283,10 @@ def main():
     parser.add_argument("--task", required=True, help="lbm_eval task name (PascalCase)")
     parser.add_argument("--num-episodes", default="0:10", help="Scenario index range start:end (or a count N = 0:N)")
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--gpu", type=int, default=None, help="GPU for both policy server and simulator")
+    parser.add_argument(
+        "--gpu", type=int, default=None, help="GPU for the policy server (and simulator unless --sim-gpu)"
+    )
+    parser.add_argument("--sim-gpu", type=int, default=None, help="Separate GPU for the simulator's rendering")
     parser.add_argument("--port", type=int, default=50051)
     parser.add_argument("--num_flow_steps", type=int, default=8)
     parser.add_argument("--open_loop_steps", type=int, default=8)
