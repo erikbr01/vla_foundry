@@ -17,9 +17,10 @@ steps). Episodes are matched to embedding segments via the per-episode seed
 the simulator sends in the gRPC reset — the run fails loudly if seeds and
 scenario indices cannot be reconciled, never writing misaligned arrays.
 
-Episodes run serially (``NUM_PROCESSES=1``) so retries are unambiguous: a
-retried scenario produces several segments with the same seed and only the
-last one (the attempt that produced the recorded result) is kept.
+Episodes may run in parallel (``--num-processes``): segments are keyed by
+gRPC client+seed, so interleaving is safe. Retries produce several segments
+with the same seed and only the last one (the attempt that produced the
+recorded result) is kept.
 
 Usage::
 
@@ -125,7 +126,7 @@ def run_simulator(args, raw_dir: Path, log_path: Path) -> None:
         "-e",
         f"LAUNCH_DEMONSTRATION_INDICES={args.num_episodes}",
         "-e",
-        "NUM_PROCESSES=1",
+        f"NUM_PROCESSES={args.num_processes}",
         "-e",
         "POLICY_HOST=localhost",
         "-e",
@@ -283,6 +284,14 @@ def main():
     parser.add_argument("--open_loop_steps", type=int, default=8)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--docker_image", default=DEFAULT_DOCKER_IMAGE)
+    parser.add_argument(
+        "--num-processes",
+        type=int,
+        default=1,
+        help="Parallel simulator processes against the one policy server. Embedding "
+        "segments are keyed by gRPC client+seed, so interleaved episodes stay "
+        "correctly attributed; the seed/scenario alignment checks are order-independent.",
+    )
     parser.add_argument("--use_eval_seed", type=int, default=1)
     parser.add_argument("--max_retries", type=int, default=3)
     parser.add_argument("--video_fps", type=int, default=10)
